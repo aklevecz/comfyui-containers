@@ -1,5 +1,4 @@
 #!/bin/bash
-
 setup_comfyui() {
     echo "Setting up ComfyUI..."
 
@@ -27,15 +26,13 @@ setup_comfyui() {
     # Install ComfyUI dependencies
     echo "Installing ComfyUI dependencies..."
     pip install -r requirements.txt
+    pip install -U accelerate==0.32.0
+    pip uninstall -y opencv-python opencv-python-headless opencv-contrib-python-headless opencv-contrib-python
+    pip install opencv-python opencv-python-headless opencv-contrib-python-headless
+    pip install opencv-contrib-python
 
-    # Create necessary directories
-    mkdir -p /workspace/ComfyUI/models/checkpoints
-    mkdir -p /workspace/ComfyUI/models/vae
-    mkdir -p /workspace/ComfyUI/models/unet
-    mkdir -p /workspace/ComfyUI/models/style_models
-    mkdir -p /workspace/ComfyUI/models/diffusion_models
-    mkdir -p /workspace/ComfyUI/models/text_encoders
-    mkdir -p /workspace/ComfyUI/custom_nodes
+    # do i need this?
+    # pip install -U diffusers
 }
 
 # Function for downloading models
@@ -57,18 +54,23 @@ install_node() {
     local target_dir=$1
     local repo_url=$2
     local name=$3
-
+    
     if [ ! -d "$target_dir" ]; then
         echo "Installing $name..."
         (cd /workspace/ComfyUI/custom_nodes && 
-         git clone "$repo_url" "$(basename "$target_dir")" && 
-         cd "$(basename "$target_dir")" && 
-         if [ -f "requirements.txt" ]; then
-             pip install -r requirements.txt
-         fi) || echo "Warning: Failed to install $name"
+         git clone "$repo_url" "$(basename "$target_dir")") || {
+            echo "Warning: Failed to clone $name"
+            return
+        }
     else
-        echo "$name already exists, skipping installation"
+        echo "$name already exists, checking requirements..."
     fi
+    
+    # Install requirements regardless of whether we just cloned or not
+    (cd "$target_dir" && 
+     if [ -f "requirements.txt" ]; then
+         pip install -r requirements.txt
+     fi) || echo "Warning: Failed to install requirements for $name"
 }
 
 # Setup ComfyUI first (needs to happen before other installations)
@@ -96,7 +98,11 @@ echo "Starting post-installation setup..."
     
     download_model "/workspace/ComfyUI/models/unet/iclight_sd15_fc.safetensors" \
                   "https://huggingface.co/lllyasviel/ic-light/resolve/main/iclight_sd15_fc.safetensors" \
-                  "IC Light"
+                  "IC Light FC"
+
+    download_model "/workspace/ComfyUI/models/unet/iclight_sd15_fbc.safetensors" \
+                  "https://huggingface.co/lllyasviel/ic-light/resolve/main/iclight_sd15_fbc.safetensors" \
+                  "IC Light FBC"
     
     download_model "/workspace/ComfyUI/models/style_models/flux1-redux-dev.safetensors" \
                   "https://huggingface.co/Runware/FLUX.1-Redux-dev/resolve/main/flux1-redux-dev.safetensors" \
@@ -114,7 +120,7 @@ echo "Starting post-installation setup..."
                   "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors" \
                   "Flux CLIP text encoder model"
 
-    download_model "/workspace/ComfyUI/models/text_encoders/sigclip_vision_patch14_384.safetensors" \
+    download_model "/workspace/ComfyUI/models/clip_vision/sigclip_vision_patch14_384.safetensors" \
                   "https://huggingface.co/Comfy-Org/sigclip_vision_384/resolve/main/sigclip_vision_patch14_384.safetensors" \
                   "SigClip Vision model"
 ) &
