@@ -80,9 +80,13 @@ echo "Starting post-installation setup..."
 
 # Download models in the background
 (
-    download_model "/workspace/ComfyUI/models/checkpoints/flux1-dev-fp8.safetensors" \
-                  "https://huggingface.co/Comfy-Org/flux1-dev/resolve/main/flux1-dev-fp8.safetensors" \
-                  "Flux fp8 merged model"
+    # download_model "/workspace/ComfyUI/models/checkpoints/flux1-dev-fp8.safetensors" \
+    #               "https://huggingface.co/Comfy-Org/flux1-dev/resolve/main/flux1-dev-fp8.safetensors" \
+    #               "Flux fp8 merged model"
+
+    download_model "/workspace/ComfyUI/models/checkpoints/flux1-dev.safetensors" \
+                  "https://huggingface.co/ChuckMcSneed/FLUX.1-dev/resolve/main/flux1-dev.safetensors" \
+                  "Flux full model -- may need a better link in the future"
     
     download_model "/workspace/ComfyUI/models/checkpoints/realisticVisionV51_v51VAE.safetensors" \
                   "https://huggingface.co/lllyasviel/fav_models/resolve/main/fav/realisticVisionV51_v51VAE.safetensors" \
@@ -104,13 +108,17 @@ echo "Starting post-installation setup..."
                   "https://huggingface.co/lllyasviel/ic-light/resolve/main/iclight_sd15_fbc.safetensors" \
                   "IC Light FBC"
     
-    download_model "/workspace/ComfyUI/models/style_models/flux1-redux-dev.safetensors" \
-                  "https://huggingface.co/Runware/FLUX.1-Redux-dev/resolve/main/flux1-redux-dev.safetensors" \
-                  "Flux redux model"
+    # download_model "/workspace/ComfyUI/models/style_models/flux1-redux-dev.safetensors" \
+    #               "https://huggingface.co/Runware/FLUX.1-Redux-dev/resolve/main/flux1-redux-dev.safetensors" \
+    #               "Flux redux model"
     
     download_model "/workspace/ComfyUI/models/diffusion_models/flux1-fill-dev.safetensors" \
                   "https://huggingface.co/mp3pintyo/FLUX.1/resolve/main/flux1-fill-dev.safetensors" \
                   "Flux fill model"
+
+    download_model "/workspace/ComfyUI/models/diffusion_models/flux1-dev-controlnet-union-pro.safetensors" \
+                  "https://huggingface.co/Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro/resolve/main/diffusion_pytorch_model.safetensors" \
+                  "Flux ControlNet model"
     
     download_model "/workspace/ComfyUI/models/text_encoders/t5xxl_fp16.safetensors" \
                   "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp16.safetensors" \

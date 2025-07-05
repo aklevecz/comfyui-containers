@@ -82,6 +82,15 @@ echo "Starting post-installation setup..."
     download_model "/workspace/ComfyUI/models/text_encoders/t5xxl_fp16.safetensors" \
                   "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp16.safetensors" \
                   "Flux text encoder model"
+
+    #Flux stuff
+    # download_model "/workspace/ComfyUI/models/vae/ae.safetensors" \
+    #             "https://huggingface.co/ffxvs/vae-flux/resolve/main/ae.safetensors" \
+    #             "Flux VAE"
+
+    # download_model "/workspace/ComfyUI/models/diffusion_models/flux1-fill-dev.safetensors" \
+    #               "https://huggingface.co/mp3pintyo/FLUX.1/resolve/main/flux1-fill-dev.safetensors" \
+    #               "Flux fill model"
 ) &
 
 # Install ComfyUI-Manager
