@@ -1,0 +1,35 @@
+# Clean up the failed installation
+cd /workspace/ComfyUI
+rm -rf models/loras/SageAttention
+
+# Install triton first
+pip install triton
+
+# Option 1: Install SageAttention 1.0 from PyPI (easiest, works without nvcc)
+pip install sageattention==1.0.6
+
+# Test the installation
+python -c "
+try:
+    import triton
+    print(f'✓ Triton: {triton.__version__}')
+    from sageattention import sageattn
+    print('✓ SageAttention 1.0 installed successfully')
+    
+    import torch
+    if torch.cuda.is_available():
+        # Simple test
+        q = torch.randn(1, 8, 512, 64, dtype=torch.float16, device='cuda')
+        k = torch.randn(1, 8, 512, 64, dtype=torch.float16, device='cuda')  
+        v = torch.randn(1, 8, 512, 64, dtype=torch.float16, device='cuda')
+        output = sageattn(q, k, v)
+        print(f'✓ Test passed - output shape: {output.shape}')
+    else:
+        print('✗ CUDA not available')
+except Exception as e:
+    print(f'✗ Error: {e}')
+"
+
+
+apt update
+apt install -y nvidia-cuda-toolkit
