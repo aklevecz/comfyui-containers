@@ -1,0 +1,76 @@
+name: wan-blackwell
+
+# Builds the Wan/Blackwell ComfyUI image on a GitHub runner and pushes it to
+# GHCR, where RunPod can pull it as an ordinary Pod template.
+#
+# Why not RunPod's own GitHub integration: it is Serverless-only, it requires a
+# runpod handler function (this image serves an interactive ComfyUI UI on 8188,
+# so there is no handler), and images it builds are locked to RunPod's
+# infrastructure -- they cannot be pulled for a Pod.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'wan-blackwell/**'
+      - '.github/workflows/wan-blackwell.yml'
+  workflow_dispatch:
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/comfyui-wan-blackwell
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      # cu128-devel + torch + ~10 node packs lands around 25 GB, and BuildKit
+      # needs room for both the layer cache and the outgoing push. A stock
+      # runner does not have the headroom; these preinstalled toolchains are
+      # unused here and buy back roughly 30 GB.
+      - name: Reclaim runner disk
+        run: |
+          df -h /
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+                      /usr/local/.ghcup /opt/hostedtoolcache/CodeQL \
+                      /usr/local/share/boost
+          sudo docker image prune --all --force
+          echo "--- after ---"
+          df -h /
+
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # No cache-from/cache-to on purpose. The GHA cache is capped at 10 GB per
+      # repo and the torch layer alone blows past that, so caching would evict
+      # itself every run and cost upload time for nothing. Rebuilds are rare.
+      #
+      # provenance: false keeps this a plain single-arch manifest. The default
+      # attestation manifest has tripped up third-party pullers, and RunPod has
+      # no use for it.
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./wan-blackwell
+          push: true
+          provenance: false
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ github.sha }}
+
+      - name: Report image size
+        run: |
+          docker buildx imagetools inspect ${{ env.IMAGE }}:${{ github.sha }} \
+            --format '{{println .Manifest.MediaType}}{{range .Manifest.Manifests}}{{println .Platform.OS "/" .Platform.Architecture}}{{end}}'
+          df -h /
