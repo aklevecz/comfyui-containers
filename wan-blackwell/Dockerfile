@@ -124,7 +124,31 @@ RUN python3 -m pip install sageattention || echo "sageattention unavailable -- w
 # onnxruntime-gpu is the load-bearing part: without cuDNN present the CUDA
 # execution provider silently falls back to CPU and swaps crawl. This base is
 # already cudnn-devel, which is why it works here at all.
+# insightface is NOT in ReActor's requirements.txt any more -- it moved into
+# the pack's install.py, which only runs under ComfyUI-Manager, and there is no
+# Manager on this pod. Installing it explicitly is what makes the node import;
+# without it ReActor is present on disk but never registers ReActorFaceSwap,
+# which looks identical to "not installed" from the client's side.
+# It builds from source, hence cython and the devel base's build-essential.
+RUN PIP_CONSTRAINT=/opt/torch-constraint.txt python3 -m pip install cython \
+ && PIP_CONSTRAINT=/opt/torch-constraint.txt python3 -m pip install insightface==0.7.3
+
 RUN PIP_CONSTRAINT=/opt/torch-constraint.txt python3 -m pip install onnxruntime-gpu
+
+# Two failure modes that only surface as a slow or missing face swap on the pod,
+# so assert them here instead. ComfyUI-Easy-Use pulls CPU onnxruntime, and if it
+# ends up shadowing onnxruntime-gpu the CUDA provider silently disappears and
+# swaps fall back to CPU. get_available_providers() reports the compiled-in
+# providers, so this works on a GPU-less builder.
+RUN python3 - <<'PY'
+import sys
+import insightface, onnxruntime
+print("insightface", insightface.__version__)
+provs = onnxruntime.get_available_providers()
+print("onnxruntime", onnxruntime.__version__, provs)
+if "CUDAExecutionProvider" not in provs:
+    sys.exit("FATAL: no CUDAExecutionProvider -- CPU onnxruntime shadowed the GPU build")
+PY
 
 # ~1.2 GB, baked rather than fetched at boot. entrypoint.sh copies models/ onto
 # the volume before symlinking, with cp -rn, so these land next to the Wan
