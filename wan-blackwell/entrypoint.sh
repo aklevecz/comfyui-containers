@@ -52,13 +52,32 @@ cd "$COMFY"
 # card the whole point is to let ComfyUI keep the model resident between passes;
 # the extend chain queues many short jobs back to back and reloading the 14B
 # model each time would erase the speedup this template exists for.
+
+ARGS=(--listen 0.0.0.0 --port 8188)
+
+# CORS is ON by default so the React client works against a fresh pod with no
+# configuration. The cost is real and worth stating once: RunPod proxy URLs are
+# public and ComfyUI has no authentication, so with '*' any page loaded in any
+# browser can queue work on this GPU. Two ways to narrow that without giving up
+# the client -- set CORS_ORIGIN to the exact origin serving it, or ENABLE_CORS=0
+# to turn it off entirely.
 #
-# COMFY_ARGS is an env-var passthrough so the pod can be reconfigured without a
-# rebuild -- a rebuild here is 12 uncached minutes. The one you will actually
-# reach for is --enable-cors-header, which the React client needs because its
-# calls to /prompt, /upload/image and /view are cross-origin through the proxy.
-# Left off by default: ComfyUI has no authentication and RunPod proxy URLs are
-# public, so enabling CORS lets any page open in your browser drive this GPU.
-# Deliberately unquoted -- word splitting is how multiple flags get through.
+# CORS_ORIGIN must stay quoted. Its default is a literal '*', and unquoted it
+# would glob against $COMFY and hand ComfyUI a filename as the allowed origin.
+case "${ENABLE_CORS:-1}" in
+    0|false|no|off)
+        echo "CORS disabled (ENABLE_CORS=${ENABLE_CORS})"
+        ;;
+    *)
+        ARGS+=(--enable-cors-header "${CORS_ORIGIN:-*}")
+        echo "CORS enabled for origin: ${CORS_ORIGIN:-*}"
+        ;;
+esac
+
+# COMFY_ARGS is a passthrough so the pod can be reconfigured without a rebuild,
+# which costs 12 uncached minutes. Unquoted on purpose -- word splitting is how
+# multiple flags get through -- so globbing is disabled first to stop a stray
+# '*' in it from expanding against the working directory.
+set -f
 echo "Starting ComfyUI${COMFY_ARGS:+ with extra args: $COMFY_ARGS}"
-exec python3 main.py --listen 0.0.0.0 --port 8188 $COMFY_ARGS
+exec python3 main.py "${ARGS[@]}" $COMFY_ARGS

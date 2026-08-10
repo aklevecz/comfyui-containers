@@ -82,8 +82,9 @@ the two manual LoRAs than use `runpodctl` from the web terminal.
 
 **That URL is public.** Pod-ID obscurity is the only thing in front of it, and
 ComfyUI has no authentication of its own — anyone who has the URL can queue
-work on a 96 GB card you are paying for. Treat it as a secret, and stop the pod
-when you are done rather than leaving it parked.
+work on a 96 GB card you are paying for. CORS ships open on top of that (see
+"Environment variables"), so treat the URL as a secret and stop the pod when
+you are done rather than leaving it parked.
 
 The proxy runs through Cloudflare with a **100-second cap on any single
 connection**, after which you get a 524. ComfyUI's design mostly sidesteps this
@@ -101,21 +102,34 @@ empty env list is a valid deploy.
 
 | Variable | Default | Effect |
 |---|---|---|
+| `ENABLE_CORS` | `1` | CORS on. `0`/`false`/`no`/`off` disables it |
+| `CORS_ORIGIN` | `*` | Restrict CORS to one origin instead of any |
 | `COMFY_ARGS` | *(empty)* | Appended verbatim to the `main.py` command line |
 | `COMFY_ROOT` | `/opt/ComfyUI` | Install root. No reason to change it on RunPod |
 
-`COMFY_ARGS` exists because a rebuild is 12 uncached minutes and the flag you
-are most likely to want is `--enable-cors-header`. The React client's calls to
-`/prompt`, `/upload/image` and `/view` are cross-origin through the proxy, so
-driving wan-flower from a browser needs it:
+**CORS is on by default**, so the React client works against a fresh pod with
+no configuration — its `/prompt`, `/upload/image` and `/view` calls are all
+cross-origin through the proxy and would otherwise fail.
+
+Know what that means: the proxy URL is public and ComfyUI has no
+authentication, so with the default `*` any page loaded in any browser can
+queue work on a card you are paying for. Two ways to narrow it without giving
+up the client:
 
 ```
-COMFY_ARGS=--enable-cors-header
+CORS_ORIGIN=https://your-client.example    # only that origin
+ENABLE_CORS=0                              # off entirely
 ```
 
-It stays off by default on purpose. Combined with an unauthenticated public
-URL, it means any page loaded in your browser can drive this GPU. Turn it on
-when you are actually using the client, not as a matter of course.
+`COMFY_ARGS` covers everything else without a rebuild, which is 12 uncached
+minutes. The one worth knowing about is `--max-upload-size`, which ComfyUI
+defaults to **100 MB** — fine for the mask videos in `wan-flower/examples/`
+(the largest is 12.8 MB), but a long mask or a big source clip for the v2v
+graph can exceed it:
+
+```
+COMFY_ARGS=--max-upload-size 500
+```
 
 ## The two LoRAs you must upload yourself
 
@@ -198,9 +212,9 @@ runComfyWorkflow(wf, { host: "https://<pod-id>-8188.proxy.runpod.net" })
 ```
 
 The client also calls `POST /upload/image` and reads `/view`, both of which go
-through the same proxy. Browser calls are cross-origin, so ComfyUI needs
-`--enable-cors-header` — set `COMFY_ARGS=--enable-cors-header` on the pod, no
-rebuild required. See "Environment variables" for why it is off by default.
+through the same proxy. Those calls are cross-origin, and CORS is enabled by
+default, so this works against a fresh pod with nothing to configure. Narrow it
+with `CORS_ORIGIN` once you know the client's origin.
 
 ## Which Celery Man goes where
 
