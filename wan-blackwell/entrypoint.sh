@@ -5,7 +5,7 @@
 # and you can watch the download progress in the pod logs rather than staring
 # at a dead port for twenty minutes.
 
-COMFY=/opt/ComfyUI
+COMFY=${COMFY_ROOT:-/opt/ComfyUI}
 
 link_to_volume() {
     local sub=$1
@@ -46,11 +46,19 @@ LOG=/workspace/model-download.log
 echo "starting model download in background (see $LOG)"
 python3 /opt/download_models.py 2>&1 | tee "$LOG" &
 
-echo "Starting ComfyUI..."
 cd "$COMFY"
 # --listen for the RunPod HTTP proxy.
 # NOTE: do NOT add --disable-smart-memory / dynamic-vram flags here. On a 96 GB
 # card the whole point is to let ComfyUI keep the model resident between passes;
 # the extend chain queues many short jobs back to back and reloading the 14B
 # model each time would erase the speedup this template exists for.
-exec python3 main.py --listen 0.0.0.0 --port 8188
+#
+# COMFY_ARGS is an env-var passthrough so the pod can be reconfigured without a
+# rebuild -- a rebuild here is 12 uncached minutes. The one you will actually
+# reach for is --enable-cors-header, which the React client needs because its
+# calls to /prompt, /upload/image and /view are cross-origin through the proxy.
+# Left off by default: ComfyUI has no authentication and RunPod proxy URLs are
+# public, so enabling CORS lets any page open in your browser drive this GPU.
+# Deliberately unquoted -- word splitting is how multiple flags get through.
+echo "Starting ComfyUI${COMFY_ARGS:+ with extra args: $COMFY_ARGS}"
+exec python3 main.py --listen 0.0.0.0 --port 8188 $COMFY_ARGS

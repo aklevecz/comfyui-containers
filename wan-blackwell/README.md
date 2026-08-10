@@ -64,15 +64,58 @@ cd wan-blackwell && docker build -t ghcr.io/aklevecz/comfyui-wan-blackwell:lates
 so renders land on the volume and share the pool with the models. Nothing but
 the OS and scratch lives on container disk.
 
-GHCR packages are **private on first publish**, and RunPod cannot pull one
-without credentials. Either make the package public (repo → Packages → the
-package → Package settings → Change visibility), or add a GitHub PAT with
-`read:packages` under RunPod Settings → Registry Credentials and attach it to
-the template. Public is simpler and there is nothing secret in the image — the
-models are all fetched at boot, not baked.
+The package published **public**, verified by pulling its manifest anonymously
+(HTTP 200, no token), so RunPod needs no registry credentials. If it ever flips
+private, add a GitHub PAT with `read:packages` under RunPod Settings → Registry
+Credentials. Nothing secret is in the image — models are fetched at boot, not
+baked.
 
 First boot downloads models in the background; ComfyUI is reachable immediately.
 Watch progress in the pod log or `/workspace/model-download.log`.
+
+## Networking
+
+Only **8188** needs exposing, as an HTTP port — RunPod serves it at
+`https://<pod-id>-8188.proxy.runpod.net`. ComfyUI already binds `0.0.0.0`,
+which the proxy requires. TCP 22 is worth adding only if you would rather scp
+the two manual LoRAs than use `runpodctl` from the web terminal.
+
+**That URL is public.** Pod-ID obscurity is the only thing in front of it, and
+ComfyUI has no authentication of its own — anyone who has the URL can queue
+work on a 96 GB card you are paying for. Treat it as a secret, and stop the pod
+when you are done rather than leaving it parked.
+
+The proxy runs through Cloudflare with a **100-second cap on any single
+connection**, after which you get a 524. ComfyUI's design mostly sidesteps this
+— `/prompt` returns a job id immediately and the client polls `/queue` and
+`/history` — so long renders are not at risk. What *can* hit the cap is a
+single slow transfer: uploading a large mask video to `/upload/image`, or
+pulling a finished mp4 back through `/view`. If either times out, that is the
+cause, and it is not a pod failure.
+
+## Environment variables
+
+**None are required.** `COMFY_ROOT` is baked into the image, and every model
+resolves from Hugging Face anonymously, so there is no `HF_TOKEN` to set. An
+empty env list is a valid deploy.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `COMFY_ARGS` | *(empty)* | Appended verbatim to the `main.py` command line |
+| `COMFY_ROOT` | `/opt/ComfyUI` | Install root. No reason to change it on RunPod |
+
+`COMFY_ARGS` exists because a rebuild is 12 uncached minutes and the flag you
+are most likely to want is `--enable-cors-header`. The React client's calls to
+`/prompt`, `/upload/image` and `/view` are cross-origin through the proxy, so
+driving wan-flower from a browser needs it:
+
+```
+COMFY_ARGS=--enable-cors-header
+```
+
+It stays off by default on purpose. Combined with an unauthenticated public
+URL, it means any page loaded in your browser can drive this GPU. Turn it on
+when you are actually using the client, not as a matter of course.
 
 ## The two LoRAs you must upload yourself
 
@@ -156,9 +199,8 @@ runComfyWorkflow(wf, { host: "https://<pod-id>-8188.proxy.runpod.net" })
 
 The client also calls `POST /upload/image` and reads `/view`, both of which go
 through the same proxy. Browser calls are cross-origin, so ComfyUI needs
-`--enable-cors-header` (add it to the `exec` line in `entrypoint.sh`) or a small
-proxy in front. Left off deliberately — it opens the instance to any page you
-have loaded.
+`--enable-cors-header` — set `COMFY_ARGS=--enable-cors-header` on the pod, no
+rebuild required. See "Environment variables" for why it is off by default.
 
 ## Which Celery Man goes where
 
