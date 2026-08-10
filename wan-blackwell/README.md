@@ -20,9 +20,8 @@ that build has no kernels for. This image is cu128, matching `reactor-celery`.
 ## Build and push
 
 CI does it. `.github/workflows/wan-blackwell.yml` builds on a GitHub runner and
-pushes to **`ghcr.io/aklevecz/comfyui-wan-blackwell:latest`** (plus a
-commit-SHA tag) on any push to `main` touching `wan-blackwell/**`. Trigger a
-rebuild by hand with:
+pushes to **`ghcr.io/aklevecz/comfyui-wan-blackwell`** on any push to `main`
+touching `wan-blackwell/**`. Trigger a rebuild by hand with:
 
 ```sh
 gh workflow run wan-blackwell.yml
@@ -32,6 +31,29 @@ gh run watch
 There is deliberately no build cache — the GHA cache is capped at 10 GB per repo
 and the torch layer alone exceeds that, so it would evict itself every run. A
 cold build is the only kind there is.
+
+### Tags
+
+**There is no `latest`.** Every build publishes two immutable tags:
+
+| Tag | Example | Use |
+|---|---|---|
+| `YYYYMMDD-<short-sha>` | `20260810-a72b5ea1c3d4` | the one to paste into RunPod; sorts chronologically |
+| `sha-<short-sha>` | `sha-a72b5ea1c3d4` | same image, for looking up a known commit |
+
+A RunPod template pins whatever tag you give it, so a moving tag means the pod
+you booted last week is not the pod you boot today and nothing tells you which
+you got. The tradeoff is real and worth knowing: you now edit the template on
+every deploy. The CI run summary prints the exact ref to copy, so it is one
+click rather than a log dig.
+
+If you want a "known good on hardware" pointer once something is actually
+verified on a pod, promote it by hand rather than letting CI move it:
+
+```sh
+docker buildx imagetools create -t ghcr.io/aklevecz/comfyui-wan-blackwell:stable \
+                                   ghcr.io/aklevecz/comfyui-wan-blackwell:20260810-a72b5ea1c3d4
+```
 
 **Not RunPod's GitHub integration.** That path looks like the obvious fit and
 isn't: it is Serverless-only, it requires a runpod handler function (this image
@@ -43,12 +65,13 @@ Building locally instead is a fallback, not the default: it's ~25 GB of image
 plus a ~10 GB push over a home connection.
 
 ```sh
-cd wan-blackwell && docker build -t ghcr.io/aklevecz/comfyui-wan-blackwell:latest .
+cd wan-blackwell && docker build -t ghcr.io/aklevecz/comfyui-wan-blackwell:local .
 ```
 
 ## RunPod setup
 
-- Container image: **`ghcr.io/aklevecz/comfyui-wan-blackwell:latest`**
+- Container image: **`ghcr.io/aklevecz/comfyui-wan-blackwell:<date>-<sha>`** —
+  copy the exact ref off the CI run summary; see "Tags". There is no `latest`.
 - GPU: **RTX PRO 6000 Blackwell (96 GB)**
 - HTTP port: **8188**
 - Volume mount path: **`/workspace`** — not optional here. Without it the
