@@ -127,6 +127,7 @@ empty env list is a valid deploy.
 |---|---|---|
 | `ENABLE_CORS` | `1` | CORS on. `0`/`false`/`no`/`off` disables it |
 | `CORS_ORIGIN` | `*` | Restrict CORS to one origin instead of any |
+| `CIVITAI_TOKEN` | *(unset)* | Fetches `sh4rpn3ss_v2_e56` at boot instead of asking you to copy it |
 | `COMFY_ARGS` | *(empty)* | Appended verbatim to the `main.py` command line |
 | `COMFY_ROOT` | `/opt/ComfyUI` | Install root. No reason to change it on RunPod |
 
@@ -154,16 +155,15 @@ graph can exceed it:
 COMFY_ARGS=--max-upload-size 500
 ```
 
-## The two LoRAs you must upload yourself
+## The one LoRA you must upload yourself
 
-This was five. Three of them turned out to be on Hugging Face after all, just
-not under names anything would have guessed, so they now download at boot like
-everything else. **~920 MB left to hand-carry.**
+This was five. Four turned out to be published somewhere after all, just not
+under names anything would have guessed. **307 MB left to hand-carry.**
 
 | File | Needed by | Source |
 |---|---|---|
-| `sh4rpn3ss_v2_e56.safetensors` | wan-flower extend | manual — 613 MB |
 | `DetailEnhancerV1.safetensors` | celery-man v2v | manual — 307 MB |
+| ~~`sh4rpn3ss_v2_e56`~~ | wan-flower extend | auto — Civitai 1928593, needs `CIVITAI_TOKEN` |
 | ~~`Wan2.1-Fun-14B-InP-MPS`~~ | celery-man v2v | auto — `alibaba-pai/Wan2.1-Fun-Reward-LoRAs` |
 | ~~`Wan14B_RealismBoost`~~ | celery-man v2v | auto — `anthonyluu/Wan14B_RealismBoost` |
 | ~~`detailz-wan`~~ | wan-flower extend | auto — `Muapi/detailz-wan-…` |
@@ -177,8 +177,19 @@ that once hosted several of these now 401s. The digest is what makes depending
 on a mirror safe — if one silently swaps contents, boot fails loudly instead of
 rendering something subtly wrong.
 
-The remaining two are Civitai-origin and not on Hugging Face under any
-searchable name. Both are on the local Windows box at
+`sh4rpn3ss_v2_e56` was located the same way — hashing the local file and
+querying Civitai's `model-versions/by-hash` endpoint, which pinned the exact
+version id instead of guessing at a name. Civitai requires auth to download, so
+set `CIVITAI_TOKEN` (Civitai → Account Settings → API Keys) and it arrives at
+boot; leave it unset and the boot log prints what to copy instead. Either way
+the sha256 is checked.
+
+`DetailEnhancerV1` is the only one left, and it does not appear to be published
+anywhere reachable. Searched: Civitai by-hash, Civitai name search (eighteen
+"detail enhancer" LoRAs, none with a matching digest), Hugging Face by name and
+full-text, the Civitai account of the FusionX author whose bundle it shipped
+in, and `anthonyluu`, who mirrored its sibling `Wan14B_RealismBoost` but not
+this. Assume it is delisted. It is on the local Windows box at
 `ComfyUI_windows_portable_nvidia_cu118_or_cpu/…/ComfyUI/models/loras/`:
 
 ```sh

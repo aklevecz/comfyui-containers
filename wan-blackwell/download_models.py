@@ -25,6 +25,13 @@ import urllib.error
 COMFY = os.environ.get("COMFY_ROOT", "/opt/ComfyUI")
 MODELS = os.path.join(COMFY, "models")
 
+# Civitai requires auth for downloads -- the URL 401s without it. Optional: set
+# it and the LoRA below arrives automatically, leave it unset and boot prints
+# the manual instructions instead. Passed as a query parameter rather than an
+# Authorization header on purpose: the download redirects to a CDN, and an
+# unexpected auth header on the redirected request is a known way to get a 400.
+CIVITAI_TOKEN = os.environ.get("CIVITAI_TOKEN", "").strip()
+
 # Repos searched, in order, for any file that does not name its own.
 REPOS = [
     "Kijai/WanVideo_comfy",
@@ -68,18 +75,29 @@ WANTED = [
      "repo": "Muapi/detailz-wan-detail-enhancer-for-wan-videos",
      "remote": "detailz-wan-detail-enhancer-for-wan-videos.safetensors",
      "sha256": "6e87dccd1ce65ceba4ab9590bf59bb5fe1a73edc8eba622a413862eaa8818f87"},
+
+    # wan-flower extend -- not on Hugging Face in any form. Found on Civitai by
+    # hashing the local original and querying their by-hash endpoint, which is
+    # how the version id below was pinned rather than guessed. Needs
+    # CIVITAI_TOKEN; without one this falls through to the manual instructions.
+    {"subdir": "loras", "name": "sh4rpn3ss_v2_e56.safetensors",
+     "civitai": 1928593,
+     "sha256": "508163c59ac81e6f10250637b13b2624b714ebaf163aa8d48c9c599b3d0b02d4"},
 ]
 
-# Still hand-carried. Neither is on Hugging Face under any searchable name --
-# they came off Civitai, and the FusionX repo that would have hosted them is
-# gone. Listed here so the boot log names them instead of letting ComfyUI fail
-# later with a bare file-not-found. ~920 MB total.
+# The last hand-carried file, 307 MB. Searched for properly and it is not
+# published anywhere reachable: absent from Civitai's by-hash index, from their
+# name search (eighteen "detail enhancer" LoRAs, none with this digest), from
+# Hugging Face by name and by full-text, from the Civitai account of the
+# FusionX author whose bundle it shipped in, and from anthonyluu, who mirrored
+# its sibling Wan14B_RealismBoost but not this. Assume it is delisted.
 #
-# The sha256 of the known-good local original is recorded so a copy that made
-# it onto the volume can actually be checked, rather than trusted by filename.
+# Listed here so the boot log names it instead of letting ComfyUI fail later
+# with a bare file-not-found. The sha256 of the known-good local original is
+# recorded so a copy that reaches the volume can be checked rather than trusted
+# by filename -- and so it can be moved into WANTED unchanged if it is ever
+# re-hosted, including to a repo of your own.
 MANUAL = [
-    ("loras", "sh4rpn3ss_v2_e56.safetensors", "wan-flower extend",
-     "508163c59ac81e6f10250637b13b2624b714ebaf163aa8d48c9c599b3d0b02d4"),
     ("loras", "DetailEnhancerV1.safetensors", "celery-man v2v",
      "9ab17e3520fd2b8f97ea25f987017766ec8e76939b3445caa994882966e6d47e"),
 ]
@@ -108,7 +126,12 @@ def tree(repo):
 
 
 def resolve(item):
-    """URL for one WANTED entry, or None if no repo carries it."""
+    """URL for one WANTED entry, or None if nothing carries it."""
+    if item.get("civitai"):
+        if not CIVITAI_TOKEN:
+            return None
+        return "https://civitai.com/api/download/models/%d?token=%s" % (
+            item["civitai"], CIVITAI_TOKEN)
     repo, remote = item.get("repo"), item.get("remote")
     if repo and remote:
         return "https://huggingface.co/%s/resolve/main/%s" % (repo, remote)
@@ -159,6 +182,7 @@ def download(url, dest, sha256=None):
 
 def main():
     missing = []
+    needs_token = []
     for item in WANTED:
         name = item["name"]
         d = os.path.join(MODELS, item["subdir"])
@@ -169,6 +193,10 @@ def main():
             continue
         url = resolve(item)
         if not url:
+            if item.get("civitai"):
+                # Not a failure -- it is the documented unconfigured state.
+                needs_token.append((name, item["civitai"]))
+                continue
             where = item.get("repo") or ", ".join(REPOS)
             print("  ! could not resolve %s in %s" % (name, where), flush=True)
             missing.append(name)
@@ -182,15 +210,26 @@ def main():
             absent_manual.append((name, used_by))
 
     print("", flush=True)
+    if needs_token:
+        print("=" * 68, flush=True)
+        print("CIVITAI_TOKEN not set -- these are downloadable but were skipped:", flush=True)
+        for name, ver in needs_token:
+            print("   models/loras/%-42s  (civitai %s)" % (name, ver), flush=True)
+        print("", flush=True)
+        print("Set CIVITAI_TOKEN on the pod and restart to fetch them, or copy", flush=True)
+        print("them onto the volume by hand. Get a token from Civitai under", flush=True)
+        print("Account Settings -> API Keys.", flush=True)
+        print("=" * 68, flush=True)
+        print("", flush=True)
     if absent_manual:
         print("=" * 68, flush=True)
-        print("MANUAL UPLOAD REQUIRED -- these LoRAs are not on Hugging Face and", flush=True)
-        print("must be copied to the volume yourself (see README):", flush=True)
+        print("MANUAL UPLOAD REQUIRED -- not published anywhere reachable, so", flush=True)
+        print("this must be copied to the volume yourself (see README):", flush=True)
         for name, used_by in absent_manual:
             print("   models/loras/%-42s  (%s)" % (name, used_by), flush=True)
         print("", flush=True)
-        print("Graphs that need them will fail to queue until they are present.", flush=True)
-        print("The wan-flower INIT graph does not need any of them and works now.", flush=True)
+        print("Graphs that need it will fail to queue until it is present.", flush=True)
+        print("The wan-flower INIT graph does not need it and works now.", flush=True)
         print("=" * 68, flush=True)
     if missing:
         print("FAILED to fetch: %s" % ", ".join(missing), flush=True)
