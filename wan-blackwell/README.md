@@ -19,21 +19,47 @@ that build has no kernels for. This image is cu128, matching `reactor-celery`.
 
 ## Build and push
 
+CI does it. `.github/workflows/wan-blackwell.yml` builds on a GitHub runner and
+pushes to **`ghcr.io/aklevecz/comfyui-wan-blackwell:latest`** (plus a
+commit-SHA tag) on any push to `main` touching `wan-blackwell/**`. Trigger a
+rebuild by hand with:
+
 ```sh
-cd wan-blackwell
-docker build -t <dockerhub-user>/comfyui-wan-blackwell:latest .
-docker push <dockerhub-user>/comfyui-wan-blackwell:latest
+gh workflow run wan-blackwell.yml
+gh run watch
 ```
 
-Rebuild with `--no-cache` to pick up new ComfyUI / custom-node commits — the
-`git clone` layers cache otherwise.
+There is deliberately no build cache — the GHA cache is capped at 10 GB per repo
+and the torch layer alone exceeds that, so it would evict itself every run. A
+cold build is the only kind there is.
+
+**Not RunPod's GitHub integration.** That path looks like the obvious fit and
+isn't: it is Serverless-only, it requires a runpod handler function (this image
+serves an interactive ComfyUI UI on 8188, so there is nothing to hand off to),
+and images it builds are locked to RunPod's own infrastructure — they cannot be
+pulled for a Pod.
+
+Building locally instead is a fallback, not the default: it's ~25 GB of image
+plus a ~10 GB push over a home connection.
+
+```sh
+cd wan-blackwell && docker build -t ghcr.io/aklevecz/comfyui-wan-blackwell:latest .
+```
 
 ## RunPod setup
 
+- Container image: **`ghcr.io/aklevecz/comfyui-wan-blackwell:latest`**
 - GPU: **RTX PRO 6000 Blackwell (96 GB)**
 - HTTP port: **8188**
 - Volume mount path: **`/workspace`** — not optional here. Without it the 31 GB
   payload re-downloads every pod and dies with the container.
+
+GHCR packages are **private on first publish**, and RunPod cannot pull one
+without credentials. Either make the package public (repo → Packages → the
+package → Package settings → Change visibility), or add a GitHub PAT with
+`read:packages` under RunPod Settings → Registry Credentials and attach it to
+the template. Public is simpler and there is nothing secret in the image — the
+models are all fetched at boot, not baked.
 
 First boot downloads models in the background; ComfyUI is reachable immediately.
 Watch progress in the pod log or `/workspace/model-download.log`.

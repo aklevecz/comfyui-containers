@@ -57,13 +57,22 @@ RUN git clone --depth 1 https://github.com/kijai/ComfyUI-WanVideoWrapper.git \
  && git clone --depth 1 https://github.com/Suzie1/ComfyUI_Comfyroll_CustomNodes.git \
  && git clone --depth 1 https://github.com/yolain/ComfyUI-Easy-Use.git
 
+# Pin the torch trio so no node pack can replace it. This is not theoretical:
+# ComfyUI_essentials pulls pixeloe, which asks for a newer torch off default
+# PyPI, and pip is one backtrack away from honouring it. A constraint turns
+# that into a loud failure of one pack's requirements instead of a silent swap
+# of the cu128 wheel this whole template exists for.
+RUN python3 -m pip freeze | grep -E '^(torch|torchvision|torchaudio)==' > /opt/torch-constraint.txt \
+ && cat /opt/torch-constraint.txt
+
 # Install each pack's requirements independently. One pack with a broken pin
 # should not take down the image build -- ComfyUI reports a failed node pack
 # clearly at startup, which is easier to debug than a dead build.
 RUN for d in /opt/ComfyUI/custom_nodes/*/; do \
       if [ -f "$d/requirements.txt" ]; then \
         echo "=== installing requirements for $(basename $d)"; \
-        python3 -m pip install -r "$d/requirements.txt" || echo "!!! FAILED: $(basename $d)"; \
+        PIP_CONSTRAINT=/opt/torch-constraint.txt \
+          python3 -m pip install -r "$d/requirements.txt" || echo "!!! FAILED: $(basename $d)"; \
       fi; \
     done
 
@@ -75,12 +84,19 @@ RUN for d in /opt/ComfyUI/custom_nodes/*/; do \
 # checks work on a CPU-only runner.
 RUN python3 - <<'PY'
 import sys, torch
-v, archs = torch.__version__, torch.cuda.get_arch_list()
-print("torch %s\narchs %s" % (v, archs))
+# NOT torch.cuda.get_arch_list(): it early-returns [] when no CUDA device is
+# visible, and the builder is a CPU-only runner, so it reports "no sm_120" for
+# a perfectly good wheel. _cuda_getArchFlags() reads the compile-time arch
+# string out of the extension and does not care whether a GPU is present.
+v = torch.__version__
+flags = getattr(torch._C, "_cuda_getArchFlags", lambda: None)()
+print("torch %s\narch flags %s" % (v, flags))
 if "+cu128" not in v:
     sys.exit("FATAL: torch is %s, not a cu128 build -- a custom node pinned over it" % v)
-if "sm_120" not in archs:
-    sys.exit("FATAL: torch has no sm_120 kernels; Blackwell will not run this")
+if not flags:
+    sys.exit("FATAL: torch reports no CUDA arch flags -- this is a CPU-only build")
+if "sm_120" not in flags.split():
+    sys.exit("FATAL: torch has no sm_120 kernels (%s); Blackwell will not run this" % flags)
 PY
 
 # ImageTrimBatch: a one-off node written for this project, never published.

@@ -69,8 +69,9 @@ jobs:
             ${{ env.IMAGE }}:latest
             ${{ env.IMAGE }}:${{ github.sha }}
 
-      - name: Report image size
+      # Plain inspect, no --format: provenance:false leaves a single-arch
+      # manifest, so a template ranging over .Manifest.Manifests errors out.
+      - name: Report image
         run: |
-          docker buildx imagetools inspect ${{ env.IMAGE }}:${{ github.sha }} \
-            --format '{{println .Manifest.MediaType}}{{range .Manifest.Manifests}}{{println .Platform.OS "/" .Platform.Architecture}}{{end}}'
+          docker buildx imagetools inspect ${{ env.IMAGE }}:${{ github.sha }}
           df -h /
