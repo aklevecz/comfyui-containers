@@ -146,15 +146,20 @@ clips from `reactor-celery/input/` into `/workspace/input/`.
 
 ## Known gaps
 
-- **Untested on real hardware.** Written and validated statically: JSON parses,
-  no Windows path fragments remain, Python compiles, `bash -n` clean. Nothing
-  here has been through a `docker build` or a live pod.
+- **Never run on a live pod.** The image now builds green in CI and is published
+  at `ghcr.io/aklevecz/comfyui-wan-blackwell` — 10.64 GiB compressed, 28 layers,
+  ~12 min cold build. The build asserts torch is `2.11.0+cu128` carrying
+  `sm_75 sm_80 sm_86 sm_90 sm_100 sm_120`, so Blackwell support is confirmed in
+  the wheel rather than assumed. Everything past that point is still unverified:
+  no pod has booted it, no model has downloaded, no graph has been queued.
 - **Custom-node repo URLs are unpinned `--depth 1` clones of `main`.** If any
   URL is wrong the build fails loudly, which is the intent — but pin SHAs before
   you rely on this for anything scheduled.
-- **SageAttention is best-effort.** It's installed with `|| echo`, and the
-  workflows stay on `sdpa` regardless. Once you confirm it imports on the pod,
-  flipping `attention_mode` to `sageattn` is likely another solid speedup.
+- **SageAttention installs, but is unproven.** `sageattention 1.0.6` lands from
+  PyPI as a pure-Python wheel — no CUDA compile, so the `|| echo` guard never
+  fires. That only means the package is present; it does not mean its Triton
+  kernels work on sm_120. The workflows stay on `sdpa`. Confirm it imports and
+  runs on the pod before flipping `attention_mode` to `sageattn`.
 - The extend graph's `PROJECT_PATH` / frames-directory convention is subtle and
   drifted once already — the client writes `{project}/frames/1` but the renders
   that produced `fast_flower` used `{project}/1`. Verify the first extend pass

@@ -13,6 +13,9 @@ on:
     branches: [main]
     paths:
       - 'wan-blackwell/**'
+      # A cold build is 12 minutes and there is no cache, so documentation
+      # edits should not pay for one.
+      - '!wan-blackwell/README.md'
       - '.github/workflows/wan-blackwell.yml'
   workflow_dispatch:
 
