@@ -8,7 +8,7 @@ share the same model stack:
 
 They ride in one image because they load the *same* base: `Wan2_1-T2V-14B_fp8`,
 `Wan2_1_VAE_bf16`, `umt5-xxl-enc-bf16`, and `lightx2v`. Only the LoRA stack on
-top differs, so a single ~31 GB volume serves both.
+top differs, so a single volume serves both. Measured payload: **34.3 GiB**.
 
 The ReActor Celery Man is **not** here — see "Which Celery Man goes where" below.
 
@@ -51,8 +51,18 @@ cd wan-blackwell && docker build -t ghcr.io/aklevecz/comfyui-wan-blackwell:lates
 - Container image: **`ghcr.io/aklevecz/comfyui-wan-blackwell:latest`**
 - GPU: **RTX PRO 6000 Blackwell (96 GB)**
 - HTTP port: **8188**
-- Volume mount path: **`/workspace`** — not optional here. Without it the 31 GB
-  payload re-downloads every pod and dies with the container.
+- Volume mount path: **`/workspace`** — not optional here. Without it the
+  34.3 GiB payload re-downloads every pod and dies with the container.
+- Container disk: **50 GB**. Do not take the default; it is 5–20 GB depending
+  on how you deploy, and the image does not fit in either. 40 GB is the floor.
+- Volume: **100 GB**. Fixed cost is 34.3 GiB of models; the rest is render
+  space, and PNG frame sequences are what actually consume it — a 75-second
+  flower piece is 2,268 frames at ~446 KB, so **1.7 GB per render**. The mp4s
+  are rounding error next to that. 75 GB works if you housekeep.
+
+`entrypoint.sh` symlinks `models`, `output`, `input` and `user` to `/workspace`,
+so renders land on the volume and share the pool with the models. Nothing but
+the OS and scratch lives on container disk.
 
 GHCR packages are **private on first publish**, and RunPod cannot pull one
 without credentials. Either make the package public (repo → Packages → the
