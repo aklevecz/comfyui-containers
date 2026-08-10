@@ -64,23 +64,32 @@ models are all fetched at boot, not baked.
 First boot downloads models in the background; ComfyUI is reachable immediately.
 Watch progress in the pod log or `/workspace/model-download.log`.
 
-## The five LoRAs you must upload yourself
+## The two LoRAs you must upload yourself
 
-Everything else resolves off Hugging Face automatically. These are community
-LoRAs that aren't in `Kijai/WanVideo_comfy`, so `download_models.py` names them
-at boot and moves on. **2.8 GB total.**
+This was five. Three of them turned out to be on Hugging Face after all, just
+not under names anything would have guessed, so they now download at boot like
+everything else. **~920 MB left to hand-carry.**
 
-| File | Needed by |
-|---|---|
-| `detailz-wan.safetensors` | wan-flower extend |
-| `sh4rpn3ss_v2_e56.safetensors` | wan-flower extend |
-| `Wan2.1-Fun-14B-InP-MPS.safetensors` | celery-man v2v |
-| `Wan14B_RealismBoost.safetensors` | celery-man v2v |
-| `DetailEnhancerV1.safetensors` | celery-man v2v |
+| File | Needed by | Source |
+|---|---|---|
+| `sh4rpn3ss_v2_e56.safetensors` | wan-flower extend | manual — 613 MB |
+| `DetailEnhancerV1.safetensors` | celery-man v2v | manual — 307 MB |
+| ~~`Wan2.1-Fun-14B-InP-MPS`~~ | celery-man v2v | auto — `alibaba-pai/Wan2.1-Fun-Reward-LoRAs` |
+| ~~`Wan14B_RealismBoost`~~ | celery-man v2v | auto — `anthonyluu/Wan14B_RealismBoost` |
+| ~~`detailz-wan`~~ | wan-flower extend | auto — `Muapi/detailz-wan-…` |
 
-All five are on the local Windows box at
-`ComfyUI_windows_portable_nvidia_cu118_or_cpu/…/ComfyUI/models/loras/`.
-Easiest transfer, per file:
+The three automatic ones were matched by hashing the local originals, so they
+are the same bytes rather than plausible substitutes, and `download_models.py`
+pins each sha256 and verifies it on the way down. That check is not ceremony:
+two of the three come from unofficial mirrors, `Muapi/wan14b_detailer-enhancer_t2v`
+ships RealismBoost's bytes under a DetailEnhancer name, and the FusionX repo
+that once hosted several of these now 401s. The digest is what makes depending
+on a mirror safe — if one silently swaps contents, boot fails loudly instead of
+rendering something subtly wrong.
+
+The remaining two are Civitai-origin and not on Hugging Face under any
+searchable name. Both are on the local Windows box at
+`ComfyUI_windows_portable_nvidia_cu118_or_cpu/…/ComfyUI/models/loras/`:
 
 ```sh
 # on the local machine
@@ -88,6 +97,17 @@ runpodctl send DetailEnhancerV1.safetensors
 # then on the pod, in /workspace/models/loras
 runpodctl receive <code>
 ```
+
+Volume-resident, so this is once ever, not once per pod. To retire the step
+entirely, upload both to a Hugging Face repo of your own and move them into
+`WANTED` with their recorded hashes — `download_models.py` already carries the
+sha256 of each known-good original.
+
+**Don't substitute lookalikes for these two.** For celery-man v2v especially:
+the positive and negative prompts are *empty*, so the LoRA stack is the entire
+conditioning — a different "detail enhancer" is a different render, not a close
+one. wan-flower extend degrades more gracefully; if you just want it moving,
+dropping `sh4rpn3ss` to strength 0 costs sharpness but still runs.
 
 **The wan-flower INIT graph needs none of them** and works the moment the base
 download finishes — that's the fastest path to seeing something render.

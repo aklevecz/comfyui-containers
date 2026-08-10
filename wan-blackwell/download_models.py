@@ -15,6 +15,7 @@ an error that says nothing useful.
 Already-present files are skipped, so this is safe to re-run and safe to run
 against a warm network volume.
 """
+import hashlib
 import json
 import os
 import sys
@@ -24,32 +25,63 @@ import urllib.error
 COMFY = os.environ.get("COMFY_ROOT", "/opt/ComfyUI")
 MODELS = os.path.join(COMFY, "models")
 
-# Repos searched, in order, for each wanted file.
+# Repos searched, in order, for any file that does not name its own.
 REPOS = [
     "Kijai/WanVideo_comfy",
 ]
 
-# (destination subdir, filename)
+# subdir  -- destination under models/
+# name    -- what ComfyUI must see on disk; the workflows reference this exactly
+# repo    -- pin to one repo instead of searching REPOS
+# remote  -- path inside that repo, when the mirror renamed the file
+# sha256  -- verified after download; a mismatch deletes the file and fails
+#
+# The three pinned LoRAs below were community uploads that used to require a
+# manual copy onto the volume. Each was matched to a public mirror by hashing
+# the local original, so these are the same bytes, not lookalikes. The hashes
+# are here because mirror names lie: Muapi/wan14b_detailer-enhancer_t2v ships
+# RealismBoost's bytes under a DetailEnhancer name, and vrgamedevgirl84's
+# FusionX repo -- the obvious home for several of these -- now 401s. Pinning
+# the digest is what makes an unofficial mirror safe to depend on.
 WANTED = [
-    ("diffusion_models", "Wan2_1-T2V-14B_fp8_e4m3fn.safetensors"),
-    ("diffusion_models", "Wan2_1-VACE_module_14B_bf16.safetensors"),
-    ("vae",              "Wan2_1_VAE_bf16.safetensors"),
-    ("text_encoders",    "umt5-xxl-enc-bf16.safetensors"),
-    ("loras",            "Wan21_T2V_14B_lightx2v_cfg_step_distill_lora_rank32.safetensors"),
-    ("loras",            "Wan21_CausVid_14B_T2V_lora_rank32_v1_5_no_first_block.safetensors"),
-    ("loras",            "Wan21_T2V_14B_MoviiGen_lora_rank32_fp16.safetensors"),
-    ("loras",            "Wan21_AccVid_T2V_14B_lora_rank32_fp16.safetensors"),
+    {"subdir": "diffusion_models", "name": "Wan2_1-T2V-14B_fp8_e4m3fn.safetensors"},
+    {"subdir": "diffusion_models", "name": "Wan2_1-VACE_module_14B_bf16.safetensors"},
+    {"subdir": "vae",              "name": "Wan2_1_VAE_bf16.safetensors"},
+    {"subdir": "text_encoders",    "name": "umt5-xxl-enc-bf16.safetensors"},
+    {"subdir": "loras",            "name": "Wan21_T2V_14B_lightx2v_cfg_step_distill_lora_rank32.safetensors"},
+    {"subdir": "loras",            "name": "Wan21_CausVid_14B_T2V_lora_rank32_v1_5_no_first_block.safetensors"},
+    {"subdir": "loras",            "name": "Wan21_T2V_14B_MoviiGen_lora_rank32_fp16.safetensors"},
+    {"subdir": "loras",            "name": "Wan21_AccVid_T2V_14B_lora_rank32_fp16.safetensors"},
+
+    # celery-man v2v -- official Alibaba release.
+    {"subdir": "loras", "name": "Wan2.1-Fun-14B-InP-MPS.safetensors",
+     "repo": "alibaba-pai/Wan2.1-Fun-Reward-LoRAs",
+     "sha256": "d5a8582d7a1a671e0485724fad9fe70caf7b061a01d2ec352e4998b86e5764c1"},
+
+    # celery-man v2v -- community mirror, digest-pinned.
+    {"subdir": "loras", "name": "Wan14B_RealismBoost.safetensors",
+     "repo": "anthonyluu/Wan14B_RealismBoost",
+     "sha256": "1cd2217d7df8f2e4de76f8a890174cced33d551cffb58d42f6d6f7f7a6d1c654"},
+
+    # wan-flower extend -- mirror renamed the file, so remote differs from name.
+    {"subdir": "loras", "name": "detailz-wan.safetensors",
+     "repo": "Muapi/detailz-wan-detail-enhancer-for-wan-videos",
+     "remote": "detailz-wan-detail-enhancer-for-wan-videos.safetensors",
+     "sha256": "6e87dccd1ce65ceba4ab9590bf59bb5fe1a73edc8eba622a413862eaa8818f87"},
 ]
 
-# Community LoRAs that are NOT in the repos above. They have to be uploaded to
-# the volume by hand -- see the README. Listed here so the boot log names them
-# explicitly instead of letting ComfyUI fail later with a bare file-not-found.
+# Still hand-carried. Neither is on Hugging Face under any searchable name --
+# they came off Civitai, and the FusionX repo that would have hosted them is
+# gone. Listed here so the boot log names them instead of letting ComfyUI fail
+# later with a bare file-not-found. ~920 MB total.
+#
+# The sha256 of the known-good local original is recorded so a copy that made
+# it onto the volume can actually be checked, rather than trusted by filename.
 MANUAL = [
-    ("loras", "detailz-wan.safetensors",            "wan-flower extend"),
-    ("loras", "sh4rpn3ss_v2_e56.safetensors",       "wan-flower extend"),
-    ("loras", "Wan2.1-Fun-14B-InP-MPS.safetensors", "celery-man v2v"),
-    ("loras", "Wan14B_RealismBoost.safetensors",    "celery-man v2v"),
-    ("loras", "DetailEnhancerV1.safetensors",       "celery-man v2v"),
+    ("loras", "sh4rpn3ss_v2_e56.safetensors", "wan-flower extend",
+     "508163c59ac81e6f10250637b13b2624b714ebaf163aa8d48c9c599b3d0b02d4"),
+    ("loras", "DetailEnhancerV1.safetensors", "celery-man v2v",
+     "9ab17e3520fd2b8f97ea25f987017766ec8e76939b3445caa994882966e6d47e"),
 ]
 
 _tree_cache = {}
@@ -75,18 +107,23 @@ def tree(repo):
     return out
 
 
-def resolve(filename):
-    for repo in REPOS:
-        path = tree(repo).get(filename)
+def resolve(item):
+    """URL for one WANTED entry, or None if no repo carries it."""
+    repo, remote = item.get("repo"), item.get("remote")
+    if repo and remote:
+        return "https://huggingface.co/%s/resolve/main/%s" % (repo, remote)
+    for r in ([repo] if repo else REPOS):
+        path = tree(r).get(item["name"])
         if path:
-            return "https://huggingface.co/%s/resolve/main/%s" % (repo, path)
+            return "https://huggingface.co/%s/resolve/main/%s" % (r, path)
     return None
 
 
-def download(url, dest):
+def download(url, dest, sha256=None):
     part = dest + ".part"
     print("  downloading %s" % os.path.basename(dest), flush=True)
     try:
+        digest = hashlib.sha256()
         req = urllib.request.Request(url, headers={"User-Agent": "wan-blackwell/1"})
         with urllib.request.urlopen(req, timeout=120) as r, open(part, "wb") as f:
             total = int(r.headers.get("Content-Length") or 0)
@@ -97,10 +134,19 @@ def download(url, dest):
                 if not chunk:
                     break
                 f.write(chunk)
+                digest.update(chunk)
                 done += len(chunk)
                 if total and done - mark > (total // 10 or 1):
                     mark = done
                     print("    %s %d%%" % (os.path.basename(dest), 100 * done // total), flush=True)
+        # Hashed on the way past, so verification costs nothing extra. A mirror
+        # that swapped its contents is caught here rather than surfacing as a
+        # render that looks subtly wrong.
+        if sha256 and digest.hexdigest() != sha256:
+            os.remove(part)
+            print("  ! DIGEST MISMATCH %s\n      expected %s\n      got      %s"
+                  % (os.path.basename(dest), sha256, digest.hexdigest()), flush=True)
+            return False
         os.rename(part, dest)
         print("  done %s" % os.path.basename(dest), flush=True)
         return True
@@ -113,23 +159,25 @@ def download(url, dest):
 
 def main():
     missing = []
-    for subdir, name in WANTED:
-        d = os.path.join(MODELS, subdir)
+    for item in WANTED:
+        name = item["name"]
+        d = os.path.join(MODELS, item["subdir"])
         os.makedirs(d, exist_ok=True)
         dest = os.path.join(d, name)
         if os.path.exists(dest):
             print("  have %s" % name, flush=True)
             continue
-        url = resolve(name)
+        url = resolve(item)
         if not url:
-            print("  ! could not resolve %s in any of %s" % (name, ", ".join(REPOS)), flush=True)
+            where = item.get("repo") or ", ".join(REPOS)
+            print("  ! could not resolve %s in %s" % (name, where), flush=True)
             missing.append(name)
             continue
-        if not download(url, dest):
+        if not download(url, dest, item.get("sha256")):
             missing.append(name)
 
     absent_manual = []
-    for subdir, name, used_by in MANUAL:
+    for subdir, name, used_by, sha in MANUAL:
         if not os.path.exists(os.path.join(MODELS, subdir, name)):
             absent_manual.append((name, used_by))
 
