@@ -29,6 +29,7 @@ RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
     wget \
     dos2unix \
+    unzip \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -55,7 +56,8 @@ RUN git clone --depth 1 https://github.com/kijai/ComfyUI-WanVideoWrapper.git \
  && git clone --depth 1 https://github.com/pythongosssss/ComfyUI-Custom-Scripts.git \
  && git clone --depth 1 https://github.com/TinyTerra/ComfyUI_tinyterraNodes.git \
  && git clone --depth 1 https://github.com/Suzie1/ComfyUI_Comfyroll_CustomNodes.git \
- && git clone --depth 1 https://github.com/yolain/ComfyUI-Easy-Use.git
+ && git clone --depth 1 https://github.com/yolain/ComfyUI-Easy-Use.git \
+ && git clone --depth 1 https://github.com/Gourieff/ComfyUI-ReActor.git
 
 # Pin the torch trio so no node pack can replace it. This is not theoretical:
 # ComfyUI_essentials pulls pixeloe, which asks for a newer torch off default
@@ -109,6 +111,36 @@ COPY TrimImageBatch.py /opt/ComfyUI/custom_nodes/TrimImageBatch.py
 # the image. The workflows ship with attention_mode "sdpa" and keep working
 # either way; flip them to sageattn only after confirming the import succeeds.
 RUN python3 -m pip install sageattention || echo "sageattention unavailable -- workflows stay on sdpa"
+
+# ReActor face swap, for the celery_man app's dancer workflows. It registers the
+# class name those graphs call, ReActorFaceSwap, so no workflow edits are needed.
+#
+# This template's README used to argue ReActor belonged on the cheap tier, since
+# ONNX face swap loads no diffusion checkpoint and a 96 GB card buys it nothing.
+# That reasoning was about whether to rent a big GPU *for* ReActor. It does not
+# apply to riding along on a card already rented for Wan, and the app wants one
+# endpoint rather than two hosts, so it goes here.
+#
+# onnxruntime-gpu is the load-bearing part: without cuDNN present the CUDA
+# execution provider silently falls back to CPU and swaps crawl. This base is
+# already cudnn-devel, which is why it works here at all.
+RUN PIP_CONSTRAINT=/opt/torch-constraint.txt python3 -m pip install onnxruntime-gpu
+
+# ~1.2 GB, baked rather than fetched at boot. entrypoint.sh copies models/ onto
+# the volume before symlinking, with cp -rn, so these land next to the Wan
+# payload on first boot without clobbering anything already there.
+#  - inswapper_128.onnx        the swap model
+#  - buffalo_l                 insightface detection/recognition pack
+#  - detection_Resnet50_Final  retinaface_resnet50 face detector
+RUN mkdir -p /opt/ComfyUI/models/insightface/models/buffalo_l /opt/ComfyUI/models/facedetection \
+    && wget -q -O /opt/ComfyUI/models/insightface/inswapper_128.onnx \
+       "https://huggingface.co/datasets/Gourieff/ReActor/resolve/main/models/inswapper_128.onnx" \
+    && wget -q -O /tmp/buffalo_l.zip \
+       "https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip" \
+    && unzip -q -j /tmp/buffalo_l.zip -d /opt/ComfyUI/models/insightface/models/buffalo_l \
+    && rm /tmp/buffalo_l.zip \
+    && wget -q -O /opt/ComfyUI/models/facedetection/detection_Resnet50_Final.pth \
+       "https://github.com/xinntao/facexlib/releases/download/v0.1.0/detection_Resnet50_Final.pth"
 
 COPY download_models.py /opt/download_models.py
 COPY workflows/ /opt/workflows/

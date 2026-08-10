@@ -252,10 +252,22 @@ with `CORS_ORIGIN` once you know the client's origin.
 
 ## Which Celery Man goes where
 
-**ReActor stays on the cheap tier.** It's `inswapper_128` + retinaface — small
-ONNX models, per-frame bound, no diffusion checkpoint at all. A 96 GB card buys
-essentially nothing; the existing `reactor-celery` template already runs fully
-self-contained on the cheapest GPU with no volume. Don't move it.
+**ReActor is now in this image too.** That reverses what this section used to
+say, so here is the reasoning rather than just the conclusion.
+
+The original argument was that ReActor is `inswapper_128` + retinaface — small
+ONNX models, per-frame bound, no diffusion checkpoint — so a 96 GB card buys it
+essentially nothing. That is still true, and it is still the right answer to
+"should I rent a big GPU *for* ReActor": no, and `reactor-celery` still exists
+for that, self-contained on the cheapest tier with no volume.
+
+It is the wrong answer to a different question. The `celery_man` app drives
+dancer face-swaps and Wan work from **one** endpoint, and the card is already
+rented for Wan. Riding along costs ~1.2 GB of image and nothing at runtime,
+whereas splitting costs the app a second host to target. So it ships here.
+
+The class name registered is **`ReActorFaceSwap`**, which is what those
+workflows already call — no JSON edits needed on the client side.
 
 **The v2v version belongs here**, and it's already in this image. It's the same
 14B Wan stack as the flower, so it inherits the same `blocks_to_swap` win. It
