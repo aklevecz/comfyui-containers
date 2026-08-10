@@ -255,12 +255,26 @@ clips from `reactor-celery/input/` into `/workspace/input/`.
 
 ## Known gaps
 
-- **Never run on a live pod.** The image now builds green in CI and is published
-  at `ghcr.io/aklevecz/comfyui-wan-blackwell` — 10.64 GiB compressed, 28 layers,
-  ~12 min cold build. The build asserts torch is `2.11.0+cu128` carrying
-  `sm_75 sm_80 sm_86 sm_90 sm_100 sm_120`, so Blackwell support is confirmed in
-  the wheel rather than assumed. Everything past that point is still unverified:
-  no pod has booted it, no model has downloaded, no graph has been queued.
+- **Nothing has actually rendered yet.** A pod has now booted
+  `20260810-f9ba5d0f88a5` and everything up to the point of queueing checks out,
+  verified against the running instance rather than assumed:
+
+  | Check | Result |
+  |---|---|
+  | torch on the card | `2.11.0+cu128` on `NVIDIA RTX PRO 6000 Blackwell Server Edition`, 95.0 GiB |
+  | ComfyUI | 0.31.0, python 3.12.3 |
+  | CORS default | `argv` shows `--enable-cors-header *` — the `*` survived as a literal |
+  | Node types | 35/35 required present out of 1,863 loaded |
+  | Model payload | all 11 auto-downloaded files visible to their loaders, sha256 verified |
+  | Workflows | all 5 present in the UI's workflow browser |
+
+  Notably `ImageTrimBatch`, `CR Integer To String` and `easy int`/`easy string`
+  all loaded — the three that were absent from the local Windows install and
+  would have stopped the extend graph from opening at all.
+
+  What remains unproven is everything downstream of pressing Queue: no sampler
+  has run, no VACE mask has been encoded, and the extend chain has not been
+  asked to find a previous segment.
 - **Custom-node repo URLs are unpinned `--depth 1` clones of `main`.** If any
   URL is wrong the build fails loudly, which is the intent — but pin SHAs before
   you rely on this for anything scheduled.
