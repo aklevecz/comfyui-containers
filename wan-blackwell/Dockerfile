@@ -197,6 +197,16 @@ RUN mkdir -p /opt/ComfyUI/models/upscale_models \
        "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth" \
     && ls -la /opt/ComfyUI/models/upscale_models
 
+# The celery_man dancer clips (768x768 upscaled set, not the 360x360 previews)
+# and the swap face. 6.8 MB, so bake them rather than re-upload them by hand on
+# every pod -- which is what has actually been happening.
+#
+# entrypoint.sh copies input/ onto the volume with cp -rn before symlinking, so
+# these land whether or not a volume is attached, and never clobber a file
+# already there. That makes the image self-sufficient: a pod with no persistent
+# storage at all still has everything the dancer workflows need.
+COPY input/ /opt/ComfyUI/input/
+
 COPY download_models.py /opt/download_models.py
 COPY workflows/ /opt/workflows/
 COPY entrypoint.sh /opt/entrypoint.sh
