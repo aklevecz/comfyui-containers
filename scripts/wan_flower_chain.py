@@ -54,7 +54,40 @@ def post_prompt(host, wf, scratch, label):
     return res.get("prompt_id")
 
 
-def wait(host, pid, label, timeout=3600):
+def wait_for_pod(host, timeout=600):
+    """Block until ComfyUI answers again. After a restart the HTTP endpoint
+    comes back well before the models are re-resident, but /object_info being
+    servable is enough to queue against."""
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        if api(host, "/system_stats", 30).strip().startswith("{"):
+            return True
+        time.sleep(10)
+    return False
+
+
+def run_with_retry(host, wf, scratch, label, attempts=3):
+    """A pass can vanish: ComfyUI restarts, /history is wiped, and the queued
+    prompt is silently dropped -- observed twice at ~45 minutes into a chain.
+    The previous segment is already on disk, so re-queueing the same pass
+    resumes the chain rather than ending it. Without this a restart costs every
+    remaining pass; the first long run lost 2 of 30 to exactly this."""
+    for k in range(attempts):
+        pid = post_prompt(host, wf, scratch, label)
+        if pid:
+            good, mp4 = wait(host, pid, label)
+            if good:
+                return True, mp4
+        if k < attempts - 1:
+            print("  %s: lost -- waiting for pod, then retry %d/%d"
+                  % (label, k + 2, attempts), flush=True)
+            if not wait_for_pod(host):
+                print("  %s: pod never came back" % label, flush=True)
+                return False, None
+    return False, None
+
+
+def wait(host, pid, label, timeout=420):
     t0 = time.time()
     while time.time() - t0 < timeout:
         time.sleep(10)
@@ -187,8 +220,7 @@ def main():
             node["inputs"]["filename_prefix"] = "%s/frames/1" % a.project
 
     print("\ninit (81 frames), prompt: %r" % a.prompt, flush=True)
-    pid = post_prompt(host, init_wf, scratch, "init")
-    if not pid or not wait(host, pid, "init")[0]:
+    if not run_with_retry(host, init_wf, scratch, "init")[0]:
         sys.exit("init failed -- nothing to extend from")
 
     ok = 0
@@ -211,8 +243,7 @@ def main():
         for node in wf.values():
             if node["class_type"] == "WanVideoTextEncode":
                 node["inputs"]["positive_prompt"] = a.prompt
-        pid = post_prompt(host, wf, scratch, "pass %d" % n)
-        if not pid or not wait(host, pid, "pass %d" % n)[0]:
+        if not run_with_retry(host, wf, scratch, "pass %d" % n)[0]:
             print("STOPPING at pass %d -- keeping the %d that landed" % (n, ok), flush=True)
             break
         ok += 1
