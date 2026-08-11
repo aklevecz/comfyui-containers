@@ -166,6 +166,26 @@ RUN mkdir -p /opt/ComfyUI/models/insightface/models/buffalo_l /opt/ComfyUI/model
     && wget -q -O /opt/ComfyUI/models/facedetection/detection_Resnet50_Final.pth \
        "https://github.com/xinntao/facexlib/releases/download/v0.1.0/detection_Resnet50_Final.pth"
 
+# Face restorers (~1.2 GB). Without these the face_restore_model dropdown offers
+# only "none", which is the state the celery_man output is stuck in.
+#
+# Why they matter more than the GPU: inswapper_128 emits a 128x128 face patch,
+# full stop. On a 768x768 frame the face lands around 250-350px, so it is being
+# upscaled ~2.5x from 128 no matter how much VRAM is available -- there is no
+# public 256 or 512 inswapper. A restorer is the only way past that ceiling.
+#
+# GPEN-BFR-2048 is the one worth having on a 96 GB card: it restores at
+# 2048x2048 where GFPGAN and CodeFormer work at 512. 1024 is kept as the
+# middle setting, and GFPGAN/CodeFormer because they are gentler -- this
+# workflow deliberately wants some of the VHS softness left intact.
+RUN mkdir -p /opt/ComfyUI/models/facerestore_models \
+    && for m in GFPGANv1.4.pth codeformer-v0.1.0.pth GPEN-BFR-1024.onnx GPEN-BFR-2048.onnx; do \
+         wget -q -O "/opt/ComfyUI/models/facerestore_models/$m" \
+           "https://huggingface.co/datasets/Gourieff/ReActor/resolve/main/models/facerestore_models/$m" \
+         || exit 1; \
+       done \
+    && ls -la /opt/ComfyUI/models/facerestore_models
+
 COPY download_models.py /opt/download_models.py
 COPY workflows/ /opt/workflows/
 COPY entrypoint.sh /opt/entrypoint.sh
