@@ -186,6 +186,17 @@ RUN mkdir -p /opt/ComfyUI/models/facerestore_models \
        done \
     && ls -la /opt/ComfyUI/models/facerestore_models
 
+# Frame upscalers. Restoring the face fixes the face; the rest of the frame is
+# still a 768 VHS rip, and h264 at 768 is the last thing a viewer sees. 4x then
+# an area-downsample to 1536 is sharper than scaling to 1536 directly, because
+# the downsample averages away the upscaler's invented high-frequency noise.
+RUN mkdir -p /opt/ComfyUI/models/upscale_models \
+    && wget -q -O /opt/ComfyUI/models/upscale_models/4x-UltraSharp.pth \
+       "https://huggingface.co/uwg/upscaler/resolve/main/ESRGAN/4x-UltraSharp.pth" \
+    && wget -q -O /opt/ComfyUI/models/upscale_models/RealESRGAN_x4plus.pth \
+       "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth" \
+    && ls -la /opt/ComfyUI/models/upscale_models
+
 COPY download_models.py /opt/download_models.py
 COPY workflows/ /opt/workflows/
 COPY entrypoint.sh /opt/entrypoint.sh
