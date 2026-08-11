@@ -15,6 +15,7 @@ an error that says nothing useful.
 Already-present files are skipped, so this is safe to re-run and safe to run
 against a warm network volume.
 """
+import concurrent.futures
 import hashlib
 import json
 import os
@@ -183,6 +184,10 @@ def download(url, dest, sha256=None):
 def main():
     missing = []
     needs_token = []
+    work = []
+
+    # Resolve serially: it is cheap, it shares _tree_cache across entries, and
+    # it keeps the "what is missing" reporting in a predictable order.
     for item in WANTED:
         name = item["name"]
         d = os.path.join(MODELS, item["subdir"])
@@ -201,8 +206,29 @@ def main():
             print("  ! could not resolve %s in %s" % (name, where), flush=True)
             missing.append(name)
             continue
-        if not download(url, dest, item.get("sha256")):
-            missing.append(name)
+        work.append((item, url, dest))
+
+    # Download in parallel. Serial was fine when a volume made this a one-time
+    # cost; run without one and the full payload is fetched on every boot, so
+    # wall-clock here is paid every single time. These are large files from a
+    # CDN, so the limit is per-connection throughput, not the endpoint -- four
+    # at once is a large win and still polite. Not more: the two 10 GB files
+    # would otherwise contend and hurt time-to-first-render.
+    if work:
+        print("\ndownloading %d file(s), 4 at a time\n" % len(work), flush=True)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+            futures = {
+                pool.submit(download, url, dest, item.get("sha256")): item["name"]
+                for item, url, dest in work
+            }
+            for fut in concurrent.futures.as_completed(futures):
+                name = futures[fut]
+                try:
+                    if not fut.result():
+                        missing.append(name)
+                except Exception as e:
+                    print("  ! failed %s: %s" % (name, e), flush=True)
+                    missing.append(name)
 
     absent_manual = []
     for subdir, name, used_by, sha in MANUAL:

@@ -74,14 +74,37 @@ cd wan-blackwell && docker build -t ghcr.io/aklevecz/comfyui-wan-blackwell:local
   copy the exact ref off the CI run summary; see "Tags". There is no `latest`.
 - GPU: **RTX PRO 6000 Blackwell (96 GB)**
 - HTTP port: **8188**
-- Volume mount path: **`/workspace`** — not optional here. Without it the
-  34.3 GiB payload re-downloads every pod and dies with the container.
-- Container disk: **50 GB**. Do not take the default; it is 5–20 GB depending
-  on how you deploy, and the image does not fit in either. 40 GB is the floor.
-- Volume: **100 GB**. Fixed cost is 34.3 GiB of models; the rest is render
-  space, and PNG frame sequences are what actually consume it — a 75-second
-  flower piece is 2,268 frames at ~446 KB, so **1.7 GB per render**. The mp4s
-  are rounding error next to that. 75 GB works if you housekeep.
+- Container disk: **50 GB**. Holds the image and OS scratch, nothing else.
+  40 GB is the floor; the default 5–20 GB cannot hold the image at all.
+- Volume disk: **100 GB**, mounted at **`/workspace`** — 34.3 GiB of models,
+  the rest render space.
+
+### Storage lifecycle, and what it costs
+
+RunPod gives a Pod a **volume disk at `/workspace`** by default, so this is the
+normal case, not something to configure. `entrypoint.sh` symlinks `models`,
+`output`, `input` and `user` into it.
+
+| | Mount | Survives stop/start | Survives terminate |
+|---|---|---|---|
+| Container disk | system-managed | no | no |
+| Volume disk | `/workspace` (default) | **yes** | **no** — deleted with the Pod |
+| Network volume | `/workspace` (replaces volume disk) | yes | **yes** |
+
+The distinction that actually bites: **stopping and restarting the same Pod
+keeps the 34.3 GiB payload. Terminating and creating a new one does not.** Every
+new Pod re-downloads the whole thing, which is why the downloader now fetches
+four files at a time.
+
+A network volume is the only way to carry models between Pods, and it **must be
+attached at Pod creation — it cannot be added later**. If you would rather not
+manage one, re-downloading per Pod is a perfectly reasonable trade; that is what
+the parallel fetch is for. It cannot be mounted "at `input/`" either way —
+RunPod attaches it at one path, and `/workspace` is the only one that does
+anything here.
+
+Render space is dominated by PNG sequences, not mp4s: a 75-second flower piece
+is 2,268 frames at ~446 KB, so **1.7 GB per render**.
 
 `entrypoint.sh` symlinks `models`, `output`, `input` and `user` to `/workspace`,
 so renders land on the volume and share the pool with the models. Nothing but

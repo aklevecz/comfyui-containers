@@ -23,9 +23,13 @@ if [ -d /workspace ]; then
         link_to_volume "$d"
     done
 else
-    echo "NO network volume mounted."
-    echo "The ~31 GB model payload will download into the container and be lost"
-    echo "when the pod stops. Attach a volume at /workspace unless this is a test."
+    # Rare: a Pod gets a volume disk at /workspace by default, so reaching here
+    # means volume size was set to 0. Everything then lands on container disk,
+    # which is also lost on stop -- not just on terminate.
+    echo "No /workspace -- volume disk is 0 GB, so nothing here survives a stop."
+    echo "The 34.3 GiB payload will land on container disk instead, which must"
+    echo "then hold the image AND the models AND the renders: size it 100 GB."
+    echo "Pull renders down before stopping the pod."
 fi
 
 # Ship the workflows into the user's workflow browser on every boot, so an
